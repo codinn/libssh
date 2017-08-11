@@ -1,3 +1,7 @@
+/*
+ * this file is only intended for including from channels.c.
+ */
+
 #define TTYMODE(NAME, FIELD, OP) \
               rc = buffer_add_u8(ttymodes_buffer, OP);\
               if (rc != SSH_OK) {\
