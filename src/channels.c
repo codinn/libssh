@@ -47,6 +47,10 @@
 #include "libssh/server.h"
 #endif
 
+#ifdef HAVE_TERMIOS_H
+#include <termios.h>
+#endif
+
 #define WINDOWBASE 1280000
 #define WINDOWLIMIT (WINDOWBASE/2)
 
@@ -776,7 +780,7 @@ SSH_PACKET_CALLBACK(channel_rcv_request) {
 #else
     SSH_LOG(SSH_LOG_WARNING, "Unhandled channel request %s", request);
 #endif
-	
+
 	SAFE_FREE(request);
 
 	return SSH_PACKET_USED;
@@ -1610,16 +1614,24 @@ error:
  *
  * @param[in]  row      The number of rows.
  *
+ * @param[in]  tiop     The termios used to set modes for pty
+ *
  * @return              SSH_OK on success,
  *                      SSH_ERROR if an error occurred,
  *                      SSH_AGAIN if in nonblocking mode and call has
  *                      to be done again.
  */
-int ssh_channel_request_pty_size(ssh_channel channel, const char *terminal,
-    int col, int row) {
+int ssh_channel_request_pty_size_modes(ssh_channel channel, const char *terminal,
+    int col, int row, struct termios *tiop) {
   ssh_session session;
   ssh_buffer buffer = NULL;
+  ssh_buffer ttymodes_buffer = NULL;
   int rc = SSH_ERROR;
+  struct termios tios;
+
+  if (tiop != NULL) {
+    tios = *tiop;
+  }
 
   if(channel == NULL) {
       return SSH_ERROR;
@@ -1636,7 +1648,7 @@ int ssh_channel_request_pty_size(ssh_channel channel, const char *terminal,
     rc = channel_request_pty_size1(channel,terminal, col, row);
 
     return rc;
-    }
+  }
 #endif
   switch(channel->request_state){
   case SSH_CHANNEL_REQ_STATE_NONE:
@@ -1651,14 +1663,32 @@ int ssh_channel_request_pty_size(ssh_channel channel, const char *terminal,
     goto error;
   }
 
+
+  ttymodes_buffer = ssh_buffer_new();
+  if (ttymodes_buffer == NULL) {
+    ssh_set_error_oom(session);
+    goto error;
+  }
+
+  uint32_t ttymode_flag;
+
+  if (tiop != NULL) {
+
+  }
+
+  #include <ttymodes.h>
+
+  size_t ttymodes_buffer_size = ttymodes_buffer->used;
   rc = ssh_buffer_pack(buffer,
-                       "sdddddb",
+                       "sdddddPb",
                        terminal,
                        col,
                        row,
                        0, /* pix */
                        0, /* pix */
-                       1, /* add a 0byte string */
+                       1 + ttymodes_buffer_size, /* add a 0byte string */
+                       ttymodes_buffer_size,
+                       ttymodes_buffer->data,
                        0);
 
   if (rc != SSH_OK) {
@@ -1669,8 +1699,30 @@ pending:
   rc = channel_request(channel, "pty-req", buffer, 1);
 error:
   ssh_buffer_free(buffer);
+  ssh_buffer_free(ttymodes_buffer);
 
   return rc;
+}
+
+/**
+ * @brief Request a pty with a specific type and size.
+ *
+ * @param[in]  channel  The channel to sent the request.
+ *
+ * @param[in]  terminal The terminal type ("vt100, xterm,...").
+ *
+ * @param[in]  col      The number of columns.
+ *
+ * @param[in]  row      The number of rows.
+ *
+ * @return              SSH_OK on success,
+ *                      SSH_ERROR if an error occurred,
+ *                      SSH_AGAIN if in nonblocking mode and call has
+ *                      to be done again.
+ */
+int ssh_channel_request_pty_size(ssh_channel channel, const char *terminal,
+    int col, int row) {
+  return ssh_channel_request_pty_size_modes(channel, terminal, col, row, NULL);
 }
 
 /**
@@ -3264,7 +3316,7 @@ error:
  *          forward the content of a socket to the channel. You still have to
  *          use channel_read and channel_write for this.
  */
-int ssh_channel_open_x11(ssh_channel channel, 
+int ssh_channel_open_x11(ssh_channel channel,
         const char *orig_addr, int orig_port) {
   ssh_session session;
   ssh_buffer payload = NULL;
