@@ -105,7 +105,6 @@ if (WITH_STATIC_LIB)
 endif (WITH_STATIC_LIB)
 
 set(libssh_SRCS
-  ttymodes.h
   agent.c
   auth.c
   base64.c

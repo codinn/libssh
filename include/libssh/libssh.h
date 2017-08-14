@@ -68,10 +68,6 @@
  #include <netdb.h>
 #endif /* _WIN32 */
 
-#ifdef HAVE_TERMIOS_H
- #include <termios.h>
-#endif
-
 #define SSH_STRINGIFY(s) SSH_TOSTRING(s)
 #define SSH_TOSTRING(s) #s
 
@@ -128,6 +124,7 @@ typedef struct ssh_session_struct* ssh_session;
 typedef struct ssh_string_struct* ssh_string;
 typedef struct ssh_event_struct* ssh_event;
 typedef void* ssh_gssapi_creds;
+typedef struct termios* ssh_termios;
 
 /* Socket type */
 #ifdef _WIN32
@@ -401,7 +398,7 @@ LIBSSH_API int ssh_channel_request_pty(ssh_channel channel);
 LIBSSH_API int ssh_channel_request_pty_size(ssh_channel channel, const char *term,
     int cols, int rows);
 LIBSSH_API int ssh_channel_request_pty_size_modes(ssh_channel channel, const char *term,
-    int cols, int rows, struct termios *tiop);
+    int cols, int rows, ssh_termios tio);
 LIBSSH_API int ssh_channel_request_shell(ssh_channel channel);
 LIBSSH_API int ssh_channel_request_send_signal(ssh_channel channel, const char *signum);
 LIBSSH_API int ssh_channel_request_sftp(ssh_channel channel);

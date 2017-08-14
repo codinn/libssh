@@ -1603,6 +1603,126 @@ error:
   return rc;
 }
 
+static int tty_iflag_modes[8][2] = {
+  {IGNPAR, 30},
+  {PARMRK, 31},
+  {INPCK,  32},
+  {ISTRIP, 33},
+  {INLCR,  34},
+  {IGNCR,  35},
+  {ICRNL,  36},
+  {0,      0}
+};
+
+static int tty_lflag_modes[14][2] = {
+  {ISIG,      50},
+  {ICANON,    51},
+#ifdef XCASE
+  {XCASE,     52},
+#endif
+  {ECHO,      53},
+  {ECHOE,     54},
+  {ECHOK,     55},
+  {ECHONL,    56},
+  {NOFLSH,    57},
+  {TOSTOP,    58},
+#ifdef IEXTEN
+  {IEXTEN,    59},
+#endif /* IEXTEN */
+#if defined(ECHOCTL)
+  {ECHOCTL,   60},
+#endif /* ECHOCTL */
+#ifdef ECHOKE
+  {ECHOKE,    61},
+#endif /* ECHOKE */
+#if defined(PENDIN)
+  {PENDIN,    62},
+#endif /* PENDIN */
+  {0,         0}
+};
+
+static int tty_oflag_modes[7][2] = {
+  {OPOST,      70},
+#if defined(OLCUC)
+  {OLCUC,      71},
+#endif
+#ifdef ONLCR
+  {ONLCR,      72},
+#endif
+#ifdef OCRNL
+  {OCRNL,      73},
+#endif
+#ifdef ONOCR
+  {ONOCR,      74},
+#endif
+#ifdef ONLRET
+  {ONLRET,     75},
+#endif
+  {0,          0}
+};
+
+static int tty_cflag_modes[15][2] = {
+  {CS7,         90},
+  {CS8,         91},
+  {PARENB,      92},
+  {PARODD,      93},
+  {0,           0}
+};
+
+static int buffer_add_ttymode(ssh_buffer *tty_modes_buffer, int tty_mode[2], tcflag_t termios_flag) {
+  int rc = SSH_ERROR;
+  uint32_t mode_mark = tty_mode[0];
+  uint8_t opcode = tty_mode[1];
+  rc = buffer_add_u8(*tty_modes_buffer, opcode);
+  if (rc != SSH_OK) {
+    return rc;
+  }
+  
+  uint32_t flag = htonl((termios_flag & mode_mark) != 0);
+  rc = buffer_add_u32(*tty_modes_buffer, flag);\
+  return rc;
+}
+
+static int buffer_add_tty_modes(ssh_buffer *tty_modes_buffer, int tty_modes[][2], tcflag_t termios_flag) {
+  int rc = SSH_ERROR;
+  int i = 0;
+  do {
+    rc = buffer_add_ttymode(tty_modes_buffer, tty_modes[i], termios_flag);
+    i++;
+    if (rc != SSH_OK) {
+      return rc;
+    }
+  } while ( tty_modes[i][0] );
+  return rc;
+}
+
+static ssh_buffer tty_make_modes(struct termios *termios_p) {
+  int rc = SSH_ERROR;
+  ssh_buffer tty_modes_buffer = ssh_buffer_new();
+  if (tty_modes_buffer == NULL) {
+    return NULL;
+  }
+  
+#define CHECK_RET_CODE \
+  if (rc != SSH_OK) {\
+    ssh_buffer_free(tty_modes_buffer); \
+    return NULL; \
+  }
+  
+  rc = buffer_add_tty_modes(&tty_modes_buffer, tty_iflag_modes, termios_p->c_iflag);
+  CHECK_RET_CODE;
+  rc = buffer_add_tty_modes(&tty_modes_buffer, tty_lflag_modes, termios_p->c_lflag);
+  CHECK_RET_CODE;
+  rc = buffer_add_tty_modes(&tty_modes_buffer, tty_oflag_modes, termios_p->c_oflag);
+  CHECK_RET_CODE;
+  rc = buffer_add_tty_modes(&tty_modes_buffer, tty_cflag_modes, termios_p->c_cflag);
+  CHECK_RET_CODE;
+  
+  #undef CHECK_RET_CODE
+  
+  return tty_modes_buffer;
+}
+
 /**
  * @brief Request a pty with a specific type and size.
  *
@@ -1614,7 +1734,7 @@ error:
  *
  * @param[in]  row      The number of rows.
  *
- * @param[in]  tiop     The termios used to set modes for pty
+ * @param[in]  termios_p     The termios used to set modes for pty
  *
  * @return              SSH_OK on success,
  *                      SSH_ERROR if an error occurred,
@@ -1622,16 +1742,11 @@ error:
  *                      to be done again.
  */
 int ssh_channel_request_pty_size_modes(ssh_channel channel, const char *terminal,
-    int col, int row, struct termios *tiop) {
+    int col, int row, struct termios *termios_p) {
   ssh_session session;
   ssh_buffer buffer = NULL;
-  ssh_buffer ttymodes_buffer = NULL;
+  ssh_buffer tty_modes_buffer = NULL;
   int rc = SSH_ERROR;
-  struct termios tios;
-
-  if (tiop != NULL) {
-    tios = *tiop;
-  }
 
   if(channel == NULL) {
       return SSH_ERROR;
@@ -1663,22 +1778,18 @@ int ssh_channel_request_pty_size_modes(ssh_channel channel, const char *terminal
     goto error;
   }
 
-
-  ttymodes_buffer = ssh_buffer_new();
-  if (ttymodes_buffer == NULL) {
+#ifdef HAVE_TERMIOS_H
+  tty_modes_buffer = tty_make_modes(termios_p);
+#endif
+  if (tty_modes_buffer == NULL) {  // if tty_make_modes fail, create a empty buffer and ignore modes.
+    tty_modes_buffer = ssh_buffer_new();
+  }
+  if (tty_modes_buffer == NULL) {
     ssh_set_error_oom(session);
     goto error;
   }
 
-  uint32_t ttymode_flag;
-
-  if (tiop != NULL) {
-
-  }
-
-  #include <ttymodes.h>
-
-  size_t ttymodes_buffer_size = ttymodes_buffer->used;
+  size_t tty_modes_buffer_size = tty_modes_buffer->used;
   rc = ssh_buffer_pack(buffer,
                        "sdddddPb",
                        terminal,
@@ -1686,9 +1797,9 @@ int ssh_channel_request_pty_size_modes(ssh_channel channel, const char *terminal
                        row,
                        0, /* pix */
                        0, /* pix */
-                       1 + ttymodes_buffer_size, /* add a 0byte string */
-                       ttymodes_buffer_size,
-                       ttymodes_buffer->data,
+                       1 + tty_modes_buffer_size, /* add a 0byte string */
+                       tty_modes_buffer_size,
+                       tty_modes_buffer->data,
                        0);
 
   if (rc != SSH_OK) {
@@ -1699,7 +1810,7 @@ pending:
   rc = channel_request(channel, "pty-req", buffer, 1);
 error:
   ssh_buffer_free(buffer);
-  ssh_buffer_free(ttymodes_buffer);
+  ssh_buffer_free(tty_modes_buffer);
 
   return rc;
 }
