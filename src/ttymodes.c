@@ -96,42 +96,42 @@ static int tty_mode_flags[36][2] = {
   {0,      0}
 };
 
-static int buffer_add_ttymode(ssh_buffer *tty_modes_buffer, int tty_mode[2], tcflag_t termios_flag) {
+static int buffer_add_ttymode(ssh_buffer buffer, int tty_mode[2], tcflag_t termios_flag) {
   int rc = SSH_ERROR;
   uint32_t mode_mark = tty_mode[0];
   uint8_t opcode = tty_mode[1];
-  rc = buffer_add_u8(*tty_modes_buffer, opcode);
+  rc = buffer_add_u8(buffer, opcode);
   if (rc != SSH_OK) {
     return rc;
   }
 
   uint32_t flag = htonl((termios_flag & mode_mark) != 0);
-  rc = buffer_add_u32(*tty_modes_buffer, flag);\
+  rc = buffer_add_u32(buffer, flag);\
   return rc;
 }
 
-static tcflag_t get_termios_flag(struct termios *termios_p, uint8_t opcode) {
+static inline tcflag_t get_termios_flag(struct termios termios, uint8_t opcode) {
   if (opcode >= 30 && opcode < 50) {
-    return termios_p->c_iflag;
+    return termios.c_iflag;
   }
   if (opcode >= 50 && opcode < 70) {
-    return termios_p->c_lflag;
+    return termios.c_lflag;
   }
   if (opcode >= 70 && opcode < 90) {
-    return termios_p->c_oflag;
+    return termios.c_oflag;
   }
   if (opcode >= 90 && opcode < 100) {
-    return termios_p->c_oflag;
+    return termios.c_oflag;
   }
   return 0;
 }
 
-static int buffer_add_tty_modes(ssh_buffer *tty_modes_buffer, int tty_modes[][2], struct termios *termios_p) {
+static int buffer_add_tty_modes(ssh_buffer buffer, int tty_modes[][2], struct termios termios) {
   int rc = SSH_ERROR;
   int i = 0;
   do {
-    tcflag_t termios_flag = get_termios_flag(termios_p, tty_modes[i][1]);
-    rc = buffer_add_ttymode(tty_modes_buffer, tty_modes[i], termios_flag);
+    tcflag_t termios_flag = get_termios_flag(termios, tty_modes[i][1]);
+    rc = buffer_add_ttymode(buffer, tty_modes[i], termios_flag);
     i++;
     if (rc != SSH_OK) {
       return rc;
@@ -150,17 +150,17 @@ static int buffer_add_tty_modes(ssh_buffer *tty_modes_buffer, int tty_modes[][2]
 ssh_buffer tty_make_modes(struct termios *termios_p) {
   int rc = SSH_ERROR;
   
-  ssh_buffer tty_modes_buffer = ssh_buffer_new();
-  if (tty_modes_buffer == NULL) {
+  ssh_buffer buffer = ssh_buffer_new();
+  if (buffer == NULL) {
     return NULL;
   }
 
-  rc = buffer_add_tty_modes(&tty_modes_buffer, tty_mode_flags, termios_p);
+  rc = buffer_add_tty_modes(buffer, tty_mode_flags, *termios_p);
 
   if (rc != SSH_OK) {
-    ssh_buffer_free(tty_modes_buffer);
+    ssh_buffer_free(buffer);
     return NULL;
   }
 
-  return tty_modes_buffer;
+  return buffer;
 }
