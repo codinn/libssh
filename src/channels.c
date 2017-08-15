@@ -1622,9 +1622,7 @@ int ssh_channel_request_pty_size_modes(ssh_channel channel, const char *terminal
     int col, int row, ssh_termios termios) {
   ssh_session session;
   ssh_buffer buffer = NULL;
-#ifdef HAVE_TERMIOS_H
   ssh_buffer tty_modes_buffer = NULL;
-#endif
   int rc = SSH_ERROR;
 
   if(channel == NULL) {
@@ -1658,35 +1656,40 @@ int ssh_channel_request_pty_size_modes(ssh_channel channel, const char *terminal
   }
 
 #ifdef HAVE_TERMIOS_H
-  tty_modes_buffer = tty_make_modes(termios);
-  if (tty_modes_buffer == NULL) {
-    ssh_set_error_oom(session);
-    goto error;
+  if (termios != NULL) {
+    tty_modes_buffer = tty_make_modes(termios);
+    if (tty_modes_buffer == NULL) {
+      ssh_set_error_oom(session);
+      goto error;
+    }
   }
-
-  size_t tty_modes_buffer_size = tty_modes_buffer->used;
-  rc = ssh_buffer_pack(buffer,
-                       "sdddddPb",
-                       terminal,
-                       col,
-                       row,
-                       0, /* pix */
-                       0, /* pix */
-                       1 + tty_modes_buffer_size, /* add tty modes and a 0byte string */
-                       tty_modes_buffer_size,
-                       tty_modes_buffer->data,
-                       0);
-#else
-  rc = ssh_buffer_pack(buffer,
-                       "sdddddb",
-                       terminal,
-                       col,
-                       row,
-                       0, /* pix */
-                       0, /* pix */
-                       1, /* add a 0byte string */
-                       0);
 #endif
+
+  if (tty_modes_buffer != NULL) {
+    size_t tty_modes_buffer_size = tty_modes_buffer->used;
+    rc = ssh_buffer_pack(buffer,
+                         "sdddddPb",
+                         terminal,
+                         col,
+                         row,
+                         0, /* pix */
+                         0, /* pix */
+                         1 + tty_modes_buffer_size, /* add tty modes and a 0byte string */
+                         tty_modes_buffer_size,
+                         tty_modes_buffer->data,
+                         0);
+    
+  } else {
+    rc = ssh_buffer_pack(buffer,
+                         "sdddddb",
+                         terminal,
+                         col,
+                         row,
+                         0, /* pix */
+                         0, /* pix */
+                         1, /* add a 0byte string */
+                         0);
+  }
 
   if (rc != SSH_OK) {
     ssh_set_error_oom(session);
@@ -1696,9 +1699,7 @@ pending:
   rc = channel_request(channel, "pty-req", buffer, 1);
 error:
   ssh_buffer_free(buffer);
-#ifdef HAVE_TERMIOS_H
   ssh_buffer_free(tty_modes_buffer);
-#endif
 
   return rc;
 }
