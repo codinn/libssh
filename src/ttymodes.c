@@ -24,7 +24,8 @@
 #include <libssh/libssh.h>
 #include <libssh/buffer.h>
 
-static int tty_iflag_modes[8][2] = {
+static int tty_mode_flags[36][2] = {
+  /* c_iflag */
   {IGNPAR, 30},
   {PARMRK, 31},
   {INPCK,  32},
@@ -32,10 +33,17 @@ static int tty_iflag_modes[8][2] = {
   {INLCR,  34},
   {IGNCR,  35},
   {ICRNL,  36},
-  {0,      0}
-};
-
-static int tty_lflag_modes[14][2] = {
+#if defined(IUCLC)
+  {IUCLC,  37},
+#endif
+  {IXON,   38},
+  {IXANY,  39},
+  {IXOFF,  40},
+#ifdef IMAXBEL
+  {IMAXBEL,41},
+#endif /* IMAXBEL */
+  
+  /* c_lflag */
   {ISIG,      50},
   {ICANON,    51},
 #ifdef XCASE
@@ -59,10 +67,8 @@ static int tty_lflag_modes[14][2] = {
 #if defined(PENDIN)
   {PENDIN,    62},
 #endif /* PENDIN */
-  {0,         0}
-};
-
-static int tty_oflag_modes[7][2] = {
+  
+  /* c_oflag */
   {OPOST,      70},
 #if defined(OLCUC)
   {OLCUC,      71},
@@ -79,15 +85,15 @@ static int tty_oflag_modes[7][2] = {
 #ifdef ONLRET
   {ONLRET,     75},
 #endif
-  {0,          0}
-};
-
-static int tty_cflag_modes[15][2] = {
+  
+  /* c_cflag */
   {CS7,         90},
   {CS8,         91},
   {PARENB,      92},
   {PARODD,      93},
-  {0,           0}
+  
+  /* end flag */
+  {0,      0}
 };
 
 static int buffer_add_ttymode(ssh_buffer *tty_modes_buffer, int tty_mode[2], tcflag_t termios_flag) {
@@ -104,10 +110,27 @@ static int buffer_add_ttymode(ssh_buffer *tty_modes_buffer, int tty_mode[2], tcf
   return rc;
 }
 
-static int buffer_add_tty_modes(ssh_buffer *tty_modes_buffer, int tty_modes[][2], tcflag_t termios_flag) {
+static tcflag_t get_termios_flag(struct termios *termios_p, uint8_t opcode) {
+  if (opcode >= 30 && opcode < 50) {
+    return termios_p->c_iflag;
+  }
+  if (opcode >= 50 && opcode < 70) {
+    return termios_p->c_lflag;
+  }
+  if (opcode >= 70 && opcode < 90) {
+    return termios_p->c_oflag;
+  }
+  if (opcode >= 90 && opcode < 100) {
+    return termios_p->c_oflag;
+  }
+  return 0;
+}
+
+static int buffer_add_tty_modes(ssh_buffer *tty_modes_buffer, int tty_modes[][2], struct termios *termios_p) {
   int rc = SSH_ERROR;
   int i = 0;
   do {
+    tcflag_t termios_flag = get_termios_flag(termios_p, tty_modes[i][1]);
     rc = buffer_add_ttymode(tty_modes_buffer, tty_modes[i], termios_flag);
     i++;
     if (rc != SSH_OK) {
@@ -118,35 +141,26 @@ static int buffer_add_tty_modes(ssh_buffer *tty_modes_buffer, int tty_modes[][2]
 }
 
 /**
- * @brief Encodes terminal modes for req-pty
+ * @brief Encodes terminal modes
  *
- * @param[in]  termios_p  The termios used to set modes for pty
+ * @param[in]  termios_p  The termios used to set modes for tty
  *
  * @return                A SSH buffer of Encoded terminal modes, NULL on error.
  */
 ssh_buffer tty_make_modes(struct termios *termios_p) {
   int rc = SSH_ERROR;
+  
   ssh_buffer tty_modes_buffer = ssh_buffer_new();
   if (tty_modes_buffer == NULL) {
     return NULL;
   }
 
-#define CHECK_RET_CODE \
-  if (rc != SSH_OK) {\
-    ssh_buffer_free(tty_modes_buffer); \
-    return NULL; \
+  rc = buffer_add_tty_modes(&tty_modes_buffer, tty_mode_flags, termios_p);
+
+  if (rc != SSH_OK) {
+    ssh_buffer_free(tty_modes_buffer);
+    return NULL;
   }
-
-  rc = buffer_add_tty_modes(&tty_modes_buffer, tty_iflag_modes, termios_p->c_iflag);
-  CHECK_RET_CODE;
-  rc = buffer_add_tty_modes(&tty_modes_buffer, tty_lflag_modes, termios_p->c_lflag);
-  CHECK_RET_CODE;
-  rc = buffer_add_tty_modes(&tty_modes_buffer, tty_oflag_modes, termios_p->c_oflag);
-  CHECK_RET_CODE;
-  rc = buffer_add_tty_modes(&tty_modes_buffer, tty_cflag_modes, termios_p->c_cflag);
-  CHECK_RET_CODE;
-
-  #undef CHECK_RET_CODE
 
   return tty_modes_buffer;
 }
