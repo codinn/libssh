@@ -171,6 +171,15 @@ if (UNIX)
         check_library_exists(rt nanosleep "" HAVE_LIBRT)
     endif (NOT LINUX)
 
+    if (APPLE)
+        # libdispatch
+        check_include_file(dispatch/dispatch.h HAVE_DISPATCH_H)
+        check_library_exists(dispatch dispatch_queue_set_specific "" HAVE_LIBDISPATCH)
+        if (HAVE_LIBDISPATCH)
+            set(CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES} dispatch)
+        endif (HAVE_LIBDISPATCH)
+    endif (APPLE)
+
     check_library_exists(rt clock_gettime "" HAVE_CLOCK_GETTIME)
     if (HAVE_LIBRT OR HAVE_CLOCK_GETTIME)
         set(CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES} rt)

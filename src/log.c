@@ -35,6 +35,13 @@
 #include "libssh/misc.h"
 #include "libssh/session.h"
 
+#ifdef HAVE_DISPATCH_H
+#include <dispatch/dispatch.h>
+static int ssh_log_level_key = 0;
+static int ssh_log_cb_key = 0;
+static int ssh_log_userdata_key = 0;
+#endif
+
 LIBSSH_THREAD int ssh_log_level;
 LIBSSH_THREAD ssh_logging_callback ssh_log_cb;
 LIBSSH_THREAD void *ssh_log_userdata;
@@ -191,6 +198,12 @@ int ssh_set_log_level(int level) {
  * @return    The value of the log level.
  */
 int ssh_get_log_level(void) {
+#ifdef HAVE_DISPATCH_H
+    int *level;
+    level = (int *)dispatch_get_specific(&ssh_log_level_key);
+    if (level) { return *level; }
+#endif
+
   return ssh_log_level;
 }
 
@@ -205,6 +218,12 @@ int ssh_set_log_callback(ssh_logging_callback cb) {
 }
 
 ssh_logging_callback ssh_get_log_callback(void) {
+#ifdef HAVE_DISPATCH_H
+    ssh_logging_callback cb;
+    cb = (ssh_logging_callback)dispatch_get_specific(&ssh_log_cb_key);
+    if (cb) { return cb; }
+#endif
+    
   return ssh_log_cb;
 }
 
@@ -215,9 +234,11 @@ ssh_logging_callback ssh_get_log_callback(void) {
  */
 void *ssh_get_log_userdata(void)
 {
-    if (ssh_log_userdata == NULL) {
-        return NULL;
-    }
+#ifdef HAVE_DISPATCH_H
+    void *userdata;
+    userdata = dispatch_get_specific(&ssh_log_userdata_key);
+    if (userdata) { return userdata; }
+#endif
 
     return ssh_log_userdata;
 }
@@ -233,8 +254,70 @@ int ssh_set_log_userdata(void *data)
 {
     ssh_log_userdata = data;
 
-    return 0;
+    return SSH_OK;
 }
+
+#ifdef HAVE_DISPATCH_H
+
+/** @internal
+ * @brief Release your context data
+ * @param common       The pointer to the contextual data.
+ */
+static void dispatch_specific_destructor(void *context)
+{
+    if (context) { free(context); }
+}
+
+/**
+ * @brief Set the log level of the library.
+ *
+ * @param[in]  level    The level to set.
+ *
+ * @return              SSH_OK on success, SSH_ERROR on error.
+ */
+int ssh_set_log_level_dispatch(int level, dispatch_queue_t queue) {
+    int *context;
+    if (level < 0) {
+        return SSH_ERROR;
+    }
+    
+    context = (int *)dispatch_queue_get_specific(queue, &ssh_log_level_key);
+    if (context) {
+        *context = level;
+        return SSH_OK;
+    }
+    
+    context = (int *)malloc(sizeof(int));
+    *context = level;
+    
+    dispatch_queue_set_specific(queue, &ssh_log_level_key, context, dispatch_specific_destructor);
+    return SSH_OK;
+}
+
+/**
+ * @brief Set the userdata for the logging function.
+ *
+ * @param[in]  data     The userdata to set.
+ *
+ * @return              SSH_OK on success.
+ */
+int ssh_set_log_userdata_dispatch(void *data, dispatch_queue_t queue)
+{
+    dispatch_queue_set_specific(queue, &ssh_log_userdata_key, data, NULL);
+    return SSH_OK;
+}
+
+int ssh_set_log_callback_dispatch(ssh_logging_callback cb, dispatch_queue_t queue)
+{
+    if (cb == NULL) {
+        return SSH_ERROR;
+    }
+    
+    dispatch_queue_set_specific(queue, &ssh_log_cb_key, (void *)cb, NULL);
+    return SSH_OK;
+}
+
+#endif // HAVE_DISPATCH_H
 
 /** @} */
 

@@ -74,6 +74,9 @@
 /* Define to 1 if you have eliptic curve cryptography */
 #cmakedefine HAVE_ECC 1
 
+/* Define to 1 if you have the <dispatch/dispatch.h> header file. */
+#cmakedefine HAVE_DISPATCH_H 1
+
 /*************************** FUNCTIONS ***************************/
 
 /* Define to 1 if you have the `snprintf' function. */

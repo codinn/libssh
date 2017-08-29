@@ -830,13 +830,25 @@ LIBSSH_API struct ssh_threads_callbacks_struct *ssh_threads_get_pthread(void);
 LIBSSH_API struct ssh_threads_callbacks_struct *ssh_threads_get_noop(void);
 
 /**
- * @brief Set the logging callback function.
+ * @brief Set the logging callback function (thread-local storage).
  *
  * @param[in]  cb  The callback to set.
  *
  * @return         0 on success, < 0 on errror.
  */
 LIBSSH_API int ssh_set_log_callback(ssh_logging_callback cb);
+
+#ifdef LIBSSH_HAVE_DISPATCH
+/**
+ * @brief Set the logging callback function (GCG dispatch queue).
+ *
+ * @param[in]  cb     The callback to set.
+ * @param[in]  queue  The queue on which to store the callback function pointer. This parameter must not be NULL.
+ *
+ * @return            0 on success, < 0 on errror.
+ */
+LIBSSH_API int ssh_set_log_callback_dispatch(ssh_logging_callback cb, dispatch_queue_t queue);
+#endif
 
 /**
  * @brief Get the pointer to the logging callback function.
