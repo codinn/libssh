@@ -124,7 +124,7 @@ static inline tcflag_t get_termios_flag(struct termios termios, uint8_t opcode) 
     return termios.c_oflag;
   }
   if (opcode >= 90 && opcode < 100) {
-    return termios.c_oflag;
+    return termios.c_cflag;
   }
   return 0;
 }
