@@ -42,6 +42,9 @@ static int tty_mode_flags[36][2] = {
 #ifdef IMAXBEL
   {IMAXBEL,41},
 #endif /* IMAXBEL */
+#ifdef IUTF8
+  {IUTF8,  42},
+#endif /* IUTF8 */
   
   /* c_lflag */
   {ISIG,      50},
