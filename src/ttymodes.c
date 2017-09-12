@@ -24,6 +24,58 @@
 #include <libssh/libssh.h>
 #include <libssh/buffer.h>
 
+#define TTY_OP_ISPEED	128
+#define TTY_OP_OSPEED	129
+
+static int tty_mode_cc[20][2] = {
+  /* control chars */
+  {VINTR,    1},
+  {VQUIT,    2},
+  {VERASE,   3},
+#if defined(VKILL)
+  {VKILL,    4},
+#endif /* VKILL */
+  {VEOF,     5},
+#if defined(VEOL)
+  {VEOL,     6},
+#endif /* VEOL */
+#ifdef VEOL2
+  {VEOL2,    7},
+#endif /* VEOL2 */
+  {VSTART,   8},
+  {VSTOP,    9},
+#if defined(VSUSP)
+  {VSUSP,    10},
+#endif /* VSUSP */
+#if defined(VDSUSP)
+  {VDSUSP,   11},
+#endif /* VDSUSP */
+#if defined(VREPRINT)
+  {VREPRINT, 12},
+#endif /* VREPRINT */
+#if defined(VWERASE)
+  {VWERASE,  13},
+#endif /* VWERASE */
+#if defined(VLNEXT)
+  {VLNEXT,   14},
+#endif /* VLNEXT */
+#if defined(VFLUSH)
+  {VFLUSH,   15},
+#endif /* VFLUSH */
+#ifdef VSWTCH
+  {VSWTCH,   16},
+#endif /* VSWTCH */
+#if defined(VSTATUS)
+  {VSTATUS,  17},
+#endif /* VSTATUS */
+#ifdef VDISCARD
+  {VDISCARD, 18},
+#endif /* VDISCARD */
+
+  /* end flag */
+  {0,      0}
+};
+
 static int tty_mode_flags[36][2] = {
   /* c_iflag */
   {IGNPAR, 30},
@@ -45,7 +97,7 @@ static int tty_mode_flags[36][2] = {
 #ifdef IUTF8
   {IUTF8,  42},
 #endif /* IUTF8 */
-  
+
   /* c_lflag */
   {ISIG,      50},
   {ICANON,    51},
@@ -70,7 +122,7 @@ static int tty_mode_flags[36][2] = {
 #if defined(PENDIN)
   {PENDIN,    62},
 #endif /* PENDIN */
-  
+
   /* c_oflag */
   {OPOST,      70},
 #if defined(OLCUC)
@@ -88,29 +140,138 @@ static int tty_mode_flags[36][2] = {
 #ifdef ONLRET
   {ONLRET,     75},
 #endif
-  
+
   /* c_cflag */
   {CS7,         90},
   {CS8,         91},
   {PARENB,      92},
   {PARODD,      93},
-  
+
   /* end flag */
   {0,      0}
 };
 
-static int buffer_add_ttymode(ssh_buffer buffer, int tty_mode[2], tcflag_t termios_flag) {
+static int speed_to_baud(speed_t speed) {
+  switch (speed) {
+    case B0:
+      return 0;
+    case B50:
+      return 50;
+    case B75:
+      return 75;
+    case B110:
+      return 110;
+    case B134:
+      return 134;
+    case B150:
+      return 150;
+    case B200:
+      return 200;
+    case B300:
+      return 300;
+    case B600:
+      return 600;
+    case B1200:
+      return 1200;
+    case B1800:
+      return 1800;
+    case B2400:
+      return 2400;
+    case B4800:
+      return 4800;
+    case B9600:
+      return 9600;
+
+#ifdef B19200
+    case B19200:
+      return 19200;
+#else /* B19200 */
+#ifdef EXTA
+    case EXTA:
+      return 19200;
+#endif /* EXTA */
+#endif /* B19200 */
+
+#ifdef B38400
+    case B38400:
+      return 38400;
+#else /* B38400 */
+#ifdef EXTB
+    case EXTB:
+      return 38400;
+#endif /* EXTB */
+#endif /* B38400 */
+
+#ifdef B7200
+    case B7200:
+      return 7200;
+#endif /* B7200 */
+#ifdef B14400
+    case B14400:
+      return 14400;
+#endif /* B14400 */
+#ifdef B28800
+    case B28800:
+      return 28800;
+#endif /* B28800 */
+#ifdef B57600
+    case B57600:
+      return 57600;
+#endif /* B57600 */
+#ifdef B76800
+    case B76800:
+      return 76800;
+#endif /* B76800 */
+#ifdef B115200
+    case B115200:
+      return 115200;
+#endif /* B115200 */
+#ifdef B230400
+    case B230400:
+      return 230400;
+#endif /* B230400 */
+    default:
+      return 9600;
+  }
+}
+
+static u_int special_char_encode(cc_t c) {
+#ifdef _POSIX_VDISABLE
+  if (c == _POSIX_VDISABLE)
+  return 255;
+#endif
+  return c;
+}
+
+static int buffer_add_ttymode(ssh_buffer buffer, uint8_t opcode, u_int value) {
   int rc = SSH_ERROR;
-  uint32_t mode_mark = tty_mode[0];
-  uint8_t opcode = tty_mode[1];
+    
   rc = buffer_add_u8(buffer, opcode);
   if (rc != SSH_OK) {
     return rc;
   }
-
-  uint32_t flag = htonl((termios_flag & mode_mark) != 0);
-  rc = buffer_add_u32(buffer, flag);\
+    
+  uint32_t flag = htonl(value);
+  rc = buffer_add_u32(buffer, flag);
   return rc;
+}
+
+static int buffer_add_ttymode_speed(ssh_buffer buffer, uint8_t opcode, speed_t speed) {
+  return buffer_add_ttymode(buffer, opcode, speed_to_baud(speed));
+}
+
+static int buffer_add_ttymode_cc(ssh_buffer buffer, int tty_cc[2], cc_t termios_cc[NCCS]) {
+  uint8_t name = tty_cc[0];
+  uint8_t opcode = tty_cc[1];
+    
+  return buffer_add_ttymode(buffer, opcode, special_char_encode(termios_cc[name]));
+}
+
+static int buffer_add_ttymode_flag(ssh_buffer buffer, int tty_mode[2], tcflag_t termios_flag) {
+  uint32_t mode_mark = tty_mode[0];
+  uint8_t opcode = tty_mode[1];
+    
+  return buffer_add_ttymode(buffer, opcode, (termios_flag & mode_mark) != 0);
 }
 
 static inline tcflag_t get_termios_flag(struct termios termios, uint8_t opcode) {
@@ -129,17 +290,30 @@ static inline tcflag_t get_termios_flag(struct termios termios, uint8_t opcode) 
   return 0;
 }
 
-static int buffer_add_tty_modes(ssh_buffer buffer, int tty_modes[][2], struct termios termios) {
+static int buffer_add_tty_modes(ssh_buffer buffer, struct termios termios) {
   int rc = SSH_ERROR;
   int i = 0;
+    
+  buffer_add_ttymode_speed(buffer, TTY_OP_ISPEED, termios.c_ispeed);
+  buffer_add_ttymode_speed(buffer, TTY_OP_OSPEED, termios.c_ospeed);
+
   do {
-    tcflag_t termios_flag = get_termios_flag(termios, tty_modes[i][1]);
-    rc = buffer_add_ttymode(buffer, tty_modes[i], termios_flag);
+    tcflag_t termios_flag = get_termios_flag(termios, tty_mode_flags[i][1]);
+    rc = buffer_add_ttymode_flag(buffer, tty_mode_flags[i], termios_flag);
     i++;
     if (rc != SSH_OK) {
       return rc;
     }
-  } while ( tty_modes[i][0] );
+  } while (tty_mode_flags[i][0]);
+
+  i = 0;
+  do {
+    rc = buffer_add_ttymode_cc(buffer, tty_mode_cc[i], termios.c_cc);
+    i++;
+    if (rc != SSH_OK) {
+      return rc;
+    }
+  } while (tty_mode_cc[i][1]);
   return rc;
 }
 
@@ -152,13 +326,13 @@ static int buffer_add_tty_modes(ssh_buffer buffer, int tty_modes[][2], struct te
  */
 ssh_buffer tty_make_modes(struct termios *termios_p) {
   int rc = SSH_ERROR;
-  
+
   ssh_buffer buffer = ssh_buffer_new();
   if (buffer == NULL) {
     return NULL;
   }
 
-  rc = buffer_add_tty_modes(buffer, tty_mode_flags, *termios_p);
+  rc = buffer_add_tty_modes(buffer, *termios_p);
 
   if (rc != SSH_OK) {
     ssh_buffer_free(buffer);
