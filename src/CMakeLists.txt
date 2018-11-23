@@ -72,6 +72,13 @@ if (WITH_ZLIB)
   )
 endif (WITH_ZLIB)
 
+if (HAVE_TERMIOS_H)
+  set(libssh_SRCS
+    ${libssh_SRCS}
+    ttymodes.c
+  )
+endif(HAVE_TERMIOS_H)
+
 if (WITH_GSSAPI AND GSSAPI_FOUND)
   set(LIBSSH_PRIVATE_INCLUDE_DIRS
     ${LIBSSH_PRIVATE_INCLUDE_DIRS}

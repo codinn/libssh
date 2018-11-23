@@ -269,6 +269,12 @@ unsigned char *bin_to_base64(const unsigned char *source, int len);
 int compress_buffer(ssh_session session,ssh_buffer buf);
 int decompress_buffer(ssh_session session,ssh_buffer buf, size_t maxlen);
 
+#ifdef HAVE_TERMIOS_H
+/* ttymodes.c */
+#include <termios.h>
+ssh_buffer tty_make_modes(struct termios *termios_p);
+#endif
+
 /* match.c */
 int match_pattern_list(const char *string, const char *pattern,
     unsigned int len, int dolower);

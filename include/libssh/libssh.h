@@ -125,6 +125,7 @@ typedef struct ssh_string_struct* ssh_string;
 typedef struct ssh_event_struct* ssh_event;
 typedef struct ssh_connector_struct * ssh_connector;
 typedef void* ssh_gssapi_creds;
+typedef void* ssh_termios;
 
 /* Socket type */
 #ifdef _WIN32
@@ -440,6 +441,8 @@ enum ssh_connector_flags_e {
 LIBSSH_API int ssh_blocking_flush(ssh_session session, int timeout);
 LIBSSH_API ssh_channel ssh_channel_accept_x11(ssh_channel channel, int timeout_ms);
 LIBSSH_API int ssh_channel_change_pty_size(ssh_channel channel,int cols,int rows);
+LIBSSH_API int ssh_channel_request_pty_size_modes(ssh_channel channel, const char *terminal,
+                                                      int col, int row, ssh_termios termios);
 LIBSSH_API int ssh_channel_close(ssh_channel channel);
 LIBSSH_API void ssh_channel_free(ssh_channel channel);
 LIBSSH_API int ssh_channel_get_exit_status(ssh_channel channel);
